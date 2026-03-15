@@ -42,9 +42,25 @@ def read_rtlamr_output(output):
 
 
 
-def get_message_for_ids(rtlamr_output, meter_ids_list):
+def detect_protocol(meter_id_key, message):
+    """
+    Detect the protocol type from the message structure.
+    """
+    if meter_id_key == 'EndpointID':
+        return 'scm+'
+    elif meter_id_key == 'ID':
+        return 'scm'
+    elif meter_id_key == 'ERTSerialNumber':
+        if 'LastConsumptionNet' in message:
+            return 'netidm'
+        return 'idm'
+    return None
+
+
+def get_message_for_ids(rtlamr_output, meter_ids_list, meter_configs=None):
     """
     Search for meter IDs in the rtlamr output and return the first match.
+    Only processes messages matching the configured protocol for each meter.
     """
     meter_id, consumption = None, None
     json_output = read_rtlamr_output(rtlamr_output)
@@ -54,6 +70,12 @@ def get_message_for_ids(rtlamr_output, meter_ids_list):
         if meter_id_key is not None:
             meter_id = str(message[meter_id_key])
             if meter_id in meter_ids_list:
+                # Filter by protocol if meter configs are provided
+                if meter_configs and meter_id in meter_configs:
+                    detected = detect_protocol(meter_id_key, message)
+                    expected = meter_configs[meter_id].get('protocol')
+                    if expected and detected and detected != expected:
+                        return None
                 message.pop(meter_id_key)
                 consumption_key = list_intersection(message, ['Consumption', 'LastConsumption', 'LastConsumptionCount'])
                 if consumption_key is not None:
