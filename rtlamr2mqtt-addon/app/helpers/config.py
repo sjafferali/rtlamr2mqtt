@@ -116,6 +116,7 @@ def load_config(config_path=None):
         'protocol',
         'name',
         'format',
+        'multiplier',
         'unit_of_measurement',
         'icon',
         'device_class',

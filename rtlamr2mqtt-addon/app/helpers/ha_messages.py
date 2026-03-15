@@ -14,6 +14,15 @@ def meter_discover_payload(base_topic, meter_config):
         meter_name = meter_config.get('name', 'Unknown Meter')
         meter_config['name']
 
+    # Build value templates with optional multiplier
+    multiplier = meter_config.get('multiplier')
+    if multiplier is not None and multiplier != 1:
+        reading_template = f"{{{{ value_json.reading|float * {multiplier} }}}}"
+        generation_template = f"{{{{ value_json.generation|float * {multiplier} }}}}"
+    else:
+        reading_template = "{{ value_json.reading|float }}"
+        generation_template = "{{ value_json.generation|float }}"
+
     template_payload = {
         "device": {
             "identifiers": f"meter_{meter_id}",
@@ -33,7 +42,7 @@ def meter_discover_payload(base_topic, meter_config):
             f"{meter_id}_reading": {
                 "platform": "sensor",
                 "name": "Reading",
-                "value_template": "{{ value_json.reading|float }}",
+                "value_template": reading_template,
                 "json_attributes_topic": f"{base_topic}/{meter_id}/attributes",
                 "unique_id": f"{meter_id}_reading"
             },
@@ -51,13 +60,15 @@ def meter_discover_payload(base_topic, meter_config):
     }
 
     template_payload['components'][f'{meter_id}_reading'].update(meter_config)
+    # Restore the value_template after update() since meter_config doesn't include it
+    template_payload['components'][f'{meter_id}_reading']['value_template'] = reading_template
 
     # Add generation sensor for NetIDM meters
     if meter_config.get('protocol') == 'netidm':
         template_payload['components'][f'{meter_id}_generation'] = {
             "platform": "sensor",
             "name": "Generation",
-            "value_template": "{{ value_json.generation|float }}",
+            "value_template": generation_template,
             "json_attributes_topic": f"{base_topic}/{meter_id}/attributes",
             "unique_id": f"{meter_id}_generation",
             "unit_of_measurement": meter_config.get('unit_of_measurement', 'Wh'),
