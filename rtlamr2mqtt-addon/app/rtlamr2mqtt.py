@@ -425,17 +425,16 @@ def main():
                 meter_config = config['meters'][reading['meter_id']]
                 is_netidm = meter_config.get('protocol') == 'netidm'
 
-                # For NetIDM, accumulate per-interval values with deduplication
+                # For NetIDM, consumption is cumulative (publish directly),
+                # but generation is per-interval (accumulate with deduplication)
                 if is_netidm:
                     mid = reading['meter_id']
                     if mid not in netidm_state:
-                        netidm_state[mid] = {'last_interval': None, 'consumption': 0, 'generation': 0}
+                        netidm_state[mid] = {'last_interval': None, 'generation': 0}
                     interval_count = reading['message'].get('ConsumptionIntervalCount')
                     if interval_count != netidm_state[mid]['last_interval']:
-                        netidm_state[mid]['consumption'] += reading['consumption']
                         netidm_state[mid]['generation'] += reading.get('generation', 0)
                         netidm_state[mid]['last_interval'] = interval_count
-                    reading['consumption'] = netidm_state[mid]['consumption']
                     reading['generation'] = netidm_state[mid]['generation']
 
                 if meter_config['format'] is not None:
