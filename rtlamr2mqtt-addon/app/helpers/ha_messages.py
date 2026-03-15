@@ -63,18 +63,20 @@ def meter_discover_payload(base_topic, meter_config):
     # Restore the value_template after update() since meter_config doesn't include it
     template_payload['components'][f'{meter_id}_reading']['value_template'] = reading_template
 
-    # Add generation sensor for meters with NetIDM support
+    # Add generation sensor for meters with NetIDM support (separate state topic)
     if 'netidm' in meter_config.get('protocol', ''):
         template_payload['components'][f'{meter_id}_generation'] = {
             "platform": "sensor",
             "name": "Generation",
             "value_template": generation_template,
-            "json_attributes_topic": f"{base_topic}/{meter_id}/attributes",
+            "state_topic": f"{base_topic}/{meter_id}/generation",
+            "json_attributes_topic": f"{base_topic}/{meter_id}/generation_attributes",
             "unique_id": f"{meter_id}_generation",
             "unit_of_measurement": meter_config.get('unit_of_measurement', 'Wh'),
             "device_class": "energy",
             "state_class": "total_increasing",
-            "icon": "mdi:solar-power"
+            "icon": "mdi:solar-power",
+            "availability_topic": f"{base_topic}/status"
         }
 
     return template_payload

@@ -428,9 +428,8 @@ def main():
                 has_generation = 'netidm' in meter_config.get('protocol', '')
 
                 # For dual-protocol meters (idm,netidm):
-                # - IDM messages provide cumulative consumption (publish directly)
-                # - NetIDM messages provide per-interval generation (accumulate)
-                # For netidm-only meters, accumulate both consumption and generation
+                # - NetIDM messages: accumulate generation, publish to separate topic
+                # - IDM messages: publish consumption to main state topic
                 if detected == 'netidm' and has_generation:
                     mid = reading['meter_id']
                     if mid not in netidm_state:
@@ -439,28 +438,20 @@ def main():
                     if interval_count != netidm_state[mid]['last_interval']:
                         netidm_state[mid]['generation'] += reading.get('generation', 0)
                         netidm_state[mid]['last_interval'] = interval_count
-                    # For NetIDM, skip publishing consumption (IDM handles it)
-                    # Only publish generation update
-                    mqtt_client.publish(
-                        topic=f'{config["mqtt"]["base_topic"]}/status',
-                        payload='online', qos=1, retain=False
-                    )
+                    # Publish generation to its own topic
                     g = netidm_state[mid]['generation']
                     if meter_config['format'] is not None:
                         g = ro.format_number(g, meter_config['format'])
-                    payload = {
-                        'reading': None,
-                        'generation': g,
-                        'lastseen': get_iso8601_timestamp()
-                    }
                     mqtt_client.publish(
-                        topic=f'{config["mqtt"]["base_topic"]}/{reading["meter_id"]}/state',
-                        payload=dumps(payload), qos=1, retain=False
+                        topic=f'{config["mqtt"]["base_topic"]}/{mid}/generation',
+                        payload=dumps({'generation': g, 'lastseen': get_iso8601_timestamp()}),
+                        qos=1, retain=False
                     )
                     reading['message']['protocol'] = detected
                     mqtt_client.publish(
-                        topic=f'{config["mqtt"]["base_topic"]}/{reading["meter_id"]}/attributes',
-                        payload=dumps(reading['message']), qos=1, retain=False
+                        topic=f'{config["mqtt"]["base_topic"]}/{mid}/generation_attributes',
+                        payload=dumps(reading['message']),
+                        qos=1, retain=False
                     )
                     sleep(1)
                     continue
@@ -476,13 +467,8 @@ def main():
                     topic=f'{config["mqtt"]["base_topic"]}/status',
                     payload='online', qos=1, retain=False
                 )
-                # Build payload with reading and latest generation if available
+                # Build payload with reading only (generation publishes independently)
                 payload = { 'reading': r, 'lastseen': get_iso8601_timestamp() }
-                if has_generation and reading['meter_id'] in netidm_state:
-                    g = netidm_state[reading['meter_id']]['generation']
-                    if meter_config['format'] is not None:
-                        g = ro.format_number(g, meter_config['format'])
-                    payload['generation'] = g
                 mqtt_client.publish(
                     topic=f'{config["mqtt"]["base_topic"]}/{reading["meter_id"]}/state',
                     payload=dumps(payload),
