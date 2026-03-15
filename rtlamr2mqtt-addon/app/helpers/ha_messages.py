@@ -52,4 +52,18 @@ def meter_discover_payload(base_topic, meter_config):
 
     template_payload['components'][f'{meter_id}_reading'].update(meter_config)
 
+    # Add generation sensor for NetIDM meters
+    if meter_config.get('protocol') == 'netidm':
+        template_payload['components'][f'{meter_id}_generation'] = {
+            "platform": "sensor",
+            "name": "Generation",
+            "value_template": "{{ value_json.generation|float }}",
+            "json_attributes_topic": f"{base_topic}/{meter_id}/attributes",
+            "unique_id": f"{meter_id}_generation",
+            "unit_of_measurement": meter_config.get('unit_of_measurement', 'Wh'),
+            "device_class": "energy",
+            "state_class": "total_increasing",
+            "icon": "mdi:solar-power"
+        }
+
     return template_payload

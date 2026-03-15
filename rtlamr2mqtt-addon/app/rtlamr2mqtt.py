@@ -320,6 +320,8 @@ def main():
     rtlamr = None
     keep_reading = True
     read_counter = []
+    # Track cumulative values and interval counts for NetIDM meters
+    netidm_state = {}  # meter_id -> {'last_interval': None, 'consumption': 0, 'generation': 0}
     while keep_reading:
         try:
             if mqtt_client.last_message is not None:
@@ -420,8 +422,24 @@ def main():
                 if reading['meter_id'] not in read_counter:
                     read_counter.append(reading['meter_id'])
 
-                if config['meters'][reading['meter_id']]['format'] is not None:
-                    r = ro.format_number(reading['consumption'], config['meters'][reading['meter_id']]['format'])
+                meter_config = config['meters'][reading['meter_id']]
+                is_netidm = meter_config.get('protocol') == 'netidm'
+
+                # For NetIDM, accumulate per-interval values with deduplication
+                if is_netidm:
+                    mid = reading['meter_id']
+                    if mid not in netidm_state:
+                        netidm_state[mid] = {'last_interval': None, 'consumption': 0, 'generation': 0}
+                    interval_count = reading['message'].get('ConsumptionIntervalCount')
+                    if interval_count != netidm_state[mid]['last_interval']:
+                        netidm_state[mid]['consumption'] += reading['consumption']
+                        netidm_state[mid]['generation'] += reading.get('generation', 0)
+                        netidm_state[mid]['last_interval'] = interval_count
+                    reading['consumption'] = netidm_state[mid]['consumption']
+                    reading['generation'] = netidm_state[mid]['generation']
+
+                if meter_config['format'] is not None:
+                    r = ro.format_number(reading['consumption'], meter_config['format'])
                 else:
                     r = reading['consumption']
 
@@ -435,6 +453,11 @@ def main():
                 )
                 # Then, send the reading
                 payload = { 'reading': r, 'lastseen': get_iso8601_timestamp() }
+                if is_netidm and 'generation' in reading:
+                    if meter_config['format'] is not None:
+                        payload['generation'] = ro.format_number(reading['generation'], meter_config['format'])
+                    else:
+                        payload['generation'] = reading['generation']
                 mqtt_client.publish(
                     topic=f'{config["mqtt"]["base_topic"]}/{reading["meter_id"]}/state',
                     payload=dumps(payload),

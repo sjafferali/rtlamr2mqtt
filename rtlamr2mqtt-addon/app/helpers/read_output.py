@@ -61,5 +61,9 @@ def get_message_for_ids(rtlamr_output, meter_ids_list):
                     message.pop(consumption_key)
 
         if meter_id is not None and consumption is not None:
-            return { 'meter_id': str(meter_id), 'consumption': int(consumption), 'message': message }
+            result = { 'meter_id': str(meter_id), 'consumption': int(consumption), 'message': message }
+            # Extract generation for NetIDM messages
+            if 'LastGeneration' in message:
+                result['generation'] = int(message.pop('LastGeneration'))
+            return result
     return None
