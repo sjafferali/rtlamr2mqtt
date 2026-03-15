@@ -424,42 +424,65 @@ def main():
                     read_counter.append(reading['meter_id'])
 
                 meter_config = config['meters'][reading['meter_id']]
-                is_netidm = meter_config.get('protocol') == 'netidm'
+                detected = reading.get('detected_protocol')
+                has_generation = 'netidm' in meter_config.get('protocol', '')
 
-                # For NetIDM, both LastConsumption and LastGeneration are
-                # per-interval values that need accumulation with deduplication
-                if is_netidm:
+                # For dual-protocol meters (idm,netidm):
+                # - IDM messages provide cumulative consumption (publish directly)
+                # - NetIDM messages provide per-interval generation (accumulate)
+                # For netidm-only meters, accumulate both consumption and generation
+                if detected == 'netidm' and has_generation:
                     mid = reading['meter_id']
                     if mid not in netidm_state:
-                        netidm_state[mid] = {'last_interval': None, 'consumption': 0, 'generation': 0}
+                        netidm_state[mid] = {'last_interval': None, 'generation': 0}
                     interval_count = reading['message'].get('ConsumptionIntervalCount')
                     if interval_count != netidm_state[mid]['last_interval']:
-                        netidm_state[mid]['consumption'] += reading['consumption']
                         netidm_state[mid]['generation'] += reading.get('generation', 0)
                         netidm_state[mid]['last_interval'] = interval_count
-                    reading['consumption'] = netidm_state[mid]['consumption']
-                    reading['generation'] = netidm_state[mid]['generation']
+                    # For NetIDM, skip publishing consumption (IDM handles it)
+                    # Only publish generation update
+                    mqtt_client.publish(
+                        topic=f'{config["mqtt"]["base_topic"]}/status',
+                        payload='online', qos=1, retain=False
+                    )
+                    g = netidm_state[mid]['generation']
+                    if meter_config['format'] is not None:
+                        g = ro.format_number(g, meter_config['format'])
+                    payload = {
+                        'reading': None,
+                        'generation': g,
+                        'lastseen': get_iso8601_timestamp()
+                    }
+                    mqtt_client.publish(
+                        topic=f'{config["mqtt"]["base_topic"]}/{reading["meter_id"]}/state',
+                        payload=dumps(payload), qos=1, retain=False
+                    )
+                    reading['message']['protocol'] = detected
+                    mqtt_client.publish(
+                        topic=f'{config["mqtt"]["base_topic"]}/{reading["meter_id"]}/attributes',
+                        payload=dumps(reading['message']), qos=1, retain=False
+                    )
+                    sleep(1)
+                    continue
 
+                # IDM/SCM/other messages: publish consumption as normal
                 if meter_config['format'] is not None:
                     r = ro.format_number(reading['consumption'], meter_config['format'])
                 else:
                     r = reading['consumption']
 
                 # Publish the reading to MQTT
-                # First, make sure the status is set to online
                 mqtt_client.publish(
                     topic=f'{config["mqtt"]["base_topic"]}/status',
-                    payload='online',
-                    qos=1,
-                    retain=False
+                    payload='online', qos=1, retain=False
                 )
-                # Then, send the reading
+                # Build payload with reading and latest generation if available
                 payload = { 'reading': r, 'lastseen': get_iso8601_timestamp() }
-                if is_netidm and 'generation' in reading:
+                if has_generation and reading['meter_id'] in netidm_state:
+                    g = netidm_state[reading['meter_id']]['generation']
                     if meter_config['format'] is not None:
-                        payload['generation'] = ro.format_number(reading['generation'], meter_config['format'])
-                    else:
-                        payload['generation'] = reading['generation']
+                        g = ro.format_number(g, meter_config['format'])
+                    payload['generation'] = g
                 mqtt_client.publish(
                     topic=f'{config["mqtt"]["base_topic"]}/{reading["meter_id"]}/state',
                     payload=dumps(payload),

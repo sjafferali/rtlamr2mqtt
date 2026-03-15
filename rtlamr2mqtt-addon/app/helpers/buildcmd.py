@@ -7,13 +7,15 @@ import helpers.usb_utils as usbutils
 
 def get_comma_separated_str(key, list_of_dict):
     """
-    Get a comma-separated string of values for a given key from a list of dictionaries.
+    Get a comma-separated string of unique values for a given key from a list of dictionaries.
+    Handles values that are already comma-separated (e.g., 'idm,netidm').
     """
-    c = []
+    values = set()
     for d in list_of_dict:
         if key in list_of_dict[d]:
-            c.append(str(list_of_dict[d][key]))
-    return ','.join(c)
+            for v in str(list_of_dict[d][key]).split(','):
+                values.add(v.strip())
+    return ','.join(sorted(values))
 
 def partial_match_remove(k, l):
     """

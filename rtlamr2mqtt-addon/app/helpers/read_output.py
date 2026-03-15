@@ -61,6 +61,8 @@ def get_message_for_ids(rtlamr_output, meter_ids_list, meter_configs=None):
     """
     Search for meter IDs in the rtlamr output and return the first match.
     Only processes messages matching the configured protocol for each meter.
+    Protocol can be a single value (e.g., 'idm') or comma-separated for
+    dual-protocol meters (e.g., 'idm,netidm').
     """
     meter_id, consumption = None, None
     json_output = read_rtlamr_output(rtlamr_output)
@@ -71,10 +73,12 @@ def get_message_for_ids(rtlamr_output, meter_ids_list, meter_configs=None):
             meter_id = str(message[meter_id_key])
             if meter_id in meter_ids_list:
                 # Filter by protocol if meter configs are provided
+                detected = None
                 if meter_configs and meter_id in meter_configs:
                     detected = detect_protocol(meter_id_key, message)
-                    expected = meter_configs[meter_id].get('protocol')
-                    if expected and detected and detected != expected:
+                    expected = meter_configs[meter_id].get('protocol', '')
+                    allowed = [p.strip() for p in expected.split(',')]
+                    if detected and detected not in allowed:
                         return None
                 message.pop(meter_id_key)
                 consumption_key = list_intersection(message, ['Consumption', 'LastConsumption', 'LastConsumptionCount'])
@@ -84,6 +88,7 @@ def get_message_for_ids(rtlamr_output, meter_ids_list, meter_configs=None):
 
         if meter_id is not None and consumption is not None:
             result = { 'meter_id': str(meter_id), 'consumption': int(consumption), 'message': message }
+            result['detected_protocol'] = detected
             # Extract generation for NetIDM messages
             if 'LastGeneration' in message:
                 result['generation'] = int(message.pop('LastGeneration'))
